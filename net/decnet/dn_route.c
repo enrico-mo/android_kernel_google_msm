@@ -928,7 +928,7 @@ static int dn_route_output_slow(struct dst_entry **pprt, const struct flowidn *o
 		.saddr = oldflp->saddr,
 		.flowidn_scope = RT_SCOPE_UNIVERSE,
 		.flowidn_mark = oldflp->flowidn_mark,
-		.flowidn_iif = init_net.loopback_dev->ifindex,
+		.flowidn_iif = LOOPBACK_IFINDEX,
 		.flowidn_oif = oldflp->flowidn_oif,
 	};
 	struct dn_route *rt = NULL;
@@ -946,7 +946,7 @@ static int dn_route_output_slow(struct dst_entry **pprt, const struct flowidn *o
 		       "dn_route_output_slow: dst=%04x src=%04x mark=%d"
 		       " iif=%d oif=%d\n", le16_to_cpu(oldflp->daddr),
 		       le16_to_cpu(oldflp->saddr),
-		       oldflp->flowidn_mark, init_net.loopback_dev->ifindex,
+		       oldflp->flowidn_mark, LOOPBACK_IFINDEX,
 		       oldflp->flowidn_oif);
 
 	/* If we have an output interface, verify its a DECnet device */
@@ -1009,7 +1009,7 @@ source_ok:
 			if (!fld.daddr)
 				goto out;
 		}
-		fld.flowidn_oif = init_net.loopback_dev->ifindex;
+		fld.flowidn_oif = LOOPBACK_IFINDEX;
 		res.type = RTN_LOCAL;
 		goto make_route;
 	}
@@ -1143,7 +1143,7 @@ make_route:
 	if (dev_out->flags & IFF_LOOPBACK)
 		flags |= RTCF_LOCAL;
 
-	rt = dst_alloc(&dn_dst_ops, dev_out, 1, 0, DST_HOST);
+	rt = dst_alloc(&dn_dst_ops, dev_out, 1, DST_OBSOLETE_NONE, DST_HOST);
 	if (rt == NULL)
 		goto e_nobufs;
 
@@ -1413,7 +1413,7 @@ static int dn_route_input_slow(struct sk_buff *skb)
 	}
 
 make_route:
-	rt = dst_alloc(&dn_dst_ops, out_dev, 0, 0, DST_HOST);
+	rt = dst_alloc(&dn_dst_ops, out_dev, 0, DST_OBSOLETE_NONE, DST_HOST);
 	if (rt == NULL)
 		goto e_nobufs;
 

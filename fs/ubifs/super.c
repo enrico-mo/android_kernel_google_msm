@@ -1582,6 +1582,12 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 	c->remounting_rw = 1;
 	c->ro_mount = 0;
 
+	if (c->space_fixup) {
+		err = ubifs_fixup_free_space(c);
+		if (err)
+			return err;
+	}
+
 	err = check_free_space(c);
 	if (err)
 		goto out;
@@ -1696,12 +1702,6 @@ static int ubifs_remount_rw(struct ubifs_info *c)
 		 * because, for example, the old index size was imprecise.
 		 */
 		err = dbg_check_space_info(c);
-	}
-
-	if (c->space_fixup) {
-		err = ubifs_fixup_free_space(c);
-		if (err)
-			goto out;
 	}
 
 	mutex_unlock(&c->umount_mutex);
@@ -1854,6 +1854,7 @@ static int ubifs_remount_fs(struct super_block *sb, int *flags, char *data)
 	int err;
 	struct ubifs_info *c = sb->s_fs_info;
 
+	sync_filesystem(sb);
 	dbg_gen("old flags %#lx, new flags %#x", sb->s_flags, *flags);
 
 	err = ubifs_parse_options(c, data, 1);
@@ -1984,7 +1985,6 @@ static struct ubifs_info *alloc_ubifs_info(struct ubi_volume_desc *ubi)
 		mutex_init(&c->lp_mutex);
 		mutex_init(&c->tnc_mutex);
 		mutex_init(&c->log_mutex);
-		mutex_init(&c->mst_mutex);
 		mutex_init(&c->umount_mutex);
 		mutex_init(&c->bu_mutex);
 		mutex_init(&c->write_reserve_mutex);
@@ -2189,6 +2189,7 @@ static struct file_system_type ubifs_fs_type = {
 	.mount   = ubifs_mount,
 	.kill_sb = kill_ubifs_super,
 };
+MODULE_ALIAS_FS("ubifs");
 
 /*
  * Inode slab cache constructor.

@@ -252,7 +252,7 @@ out_ok:
 }
 
 static struct dentry *udf_lookup(struct inode *dir, struct dentry *dentry,
-				 struct nameidata *nd)
+				 unsigned int flags)
 {
 	struct inode *inode = NULL;
 	struct fileIdentDesc cfi;
@@ -552,7 +552,7 @@ static int udf_delete_entry(struct inode *inode, struct fileIdentDesc *fi,
 }
 
 static int udf_create(struct inode *dir, struct dentry *dentry, umode_t mode,
-		      struct nameidata *nd)
+		      bool excl)
 {
 	struct udf_fileident_bh fibh;
 	struct inode *inode;
@@ -1194,7 +1194,7 @@ static struct dentry *udf_get_parent(struct dentry *child)
 {
 	struct kernel_lb_addr tloc;
 	struct inode *inode = NULL;
-	struct qstr dotdot = {.name = "..", .len = 2};
+	struct qstr dotdot = QSTR_INIT("..", 2);
 	struct fileIdentDesc cfi;
 	struct udf_fileident_bh fibh;
 
@@ -1281,6 +1281,7 @@ static int udf_encode_fh(struct dentry *de, __u32 *fh, int *lenp,
 	*lenp = 3;
 	fid->udf.block = location.logicalBlockNum;
 	fid->udf.partref = location.partitionReferenceNum;
+	fid->udf.parent_partref = 0;
 	fid->udf.generation = inode->i_generation;
 
 	if (connectable && !S_ISDIR(inode->i_mode)) {

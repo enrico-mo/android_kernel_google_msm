@@ -29,6 +29,7 @@
 #include <linux/kdebug.h>
 #include <linux/utsname.h>
 #include <linux/tracehook.h>
+#include <linux/rcupdate.h>
 
 #include <asm/cpu.h>
 #include <asm/delay.h>
@@ -301,6 +302,7 @@ cpu_idle (void)
 
 	/* endless idle loop with no priority at all */
 	while (1) {
+		rcu_idle_enter();
 		if (can_do_pal_halt) {
 			current_thread_info()->status &= ~TS_POLLING;
 			/*
@@ -331,6 +333,7 @@ cpu_idle (void)
 			normal_xtp();
 #endif
 		}
+		rcu_idle_exit();
 		schedule_preempt_disabled();
 		check_pgt_cache();
 		if (cpu_is_offline(cpu))
@@ -633,14 +636,14 @@ sys_execve (const char __user *filename,
 	    const char __user *const __user *envp,
 	    struct pt_regs *regs)
 {
-	char *fname;
+	struct filename *fname;
 	int error;
 
 	fname = getname(filename);
 	error = PTR_ERR(fname);
 	if (IS_ERR(fname))
 		goto out;
-	error = do_execve(fname, argv, envp, regs);
+	error = do_execve(fname->name, argv, envp, regs);
 	putname(fname);
 out:
 	return error;

@@ -298,6 +298,7 @@ static struct file_system_type nfs_fs_type = {
 	.kill_sb	= nfs_kill_super,
 	.fs_flags	= FS_RENAME_DOES_D_MOVE|FS_REVAL_DOT|FS_BINARY_MOUNTDATA,
 };
+MODULE_ALIAS_FS("nfs");
 
 struct file_system_type nfs_xdev_fs_type = {
 	.owner		= THIS_MODULE,
@@ -354,6 +355,7 @@ static struct file_system_type nfs4_remote_fs_type = {
 	.kill_sb	= nfs4_kill_super,
 	.fs_flags	= FS_RENAME_DOES_D_MOVE|FS_REVAL_DOT|FS_BINARY_MOUNTDATA,
 };
+MODULE_ALIAS_FS("nfs4");
 
 struct file_system_type nfs4_xdev_fs_type = {
 	.owner		= THIS_MODULE,
@@ -812,7 +814,7 @@ static int nfs_show_devname(struct seq_file *m, struct dentry *root)
 	int err = 0;
 	if (!page)
 		return -ENOMEM;
-	devname = nfs_path(&dummy, root, page, PAGE_SIZE);
+	devname = nfs_path(&dummy, root, page, PAGE_SIZE, 0);
 	if (IS_ERR(devname))
 		err = PTR_ERR(devname);
 	else
@@ -1138,7 +1140,7 @@ static int nfs_get_option_str(substring_t args[], char **option)
 {
 	kfree(*option);
 	*option = match_strdup(args);
-	return !option;
+	return !*option;
 }
 
 static int nfs_get_option_ul(substring_t args[], unsigned long *option)
@@ -1886,6 +1888,7 @@ static int nfs_validate_mount_data(void *options,
 
 		memcpy(sap, &data->addr, sizeof(data->addr));
 		args->nfs_server.addrlen = sizeof(data->addr);
+		args->nfs_server.port = ntohs(data->addr.sin_port);
 		if (!nfs_verify_server_address(sap))
 			goto out_no_address;
 
@@ -2050,6 +2053,8 @@ nfs_remount(struct super_block *sb, int *flags, char *raw_data)
 	struct nfs_mount_data *options = (struct nfs_mount_data *)raw_data;
 	struct nfs4_mount_data *options4 = (struct nfs4_mount_data *)raw_data;
 	u32 nfsvers = nfss->nfs_client->rpc_ops->version;
+
+	sync_filesystem(sb);
 
 	/*
 	 * Userspace mount programs that send binary options generally send
@@ -2598,6 +2603,7 @@ static int nfs4_validate_mount_data(void *options,
 			return -EFAULT;
 		if (!nfs_verify_server_address(sap))
 			goto out_no_address;
+		args->nfs_server.port = ntohs(((struct sockaddr_in *)sap)->sin_port);
 
 		if (data->auth_flavourlen) {
 			if (data->auth_flavourlen > 1)
@@ -3145,5 +3151,6 @@ static struct dentry *nfs4_referral_mount(struct file_system_type *fs_type,
 			IS_ERR(res) ? " [error]" : "");
 	return res;
 }
+
 
 #endif /* CONFIG_NFS_V4 */

@@ -1207,6 +1207,7 @@ static int ext2_remount (struct super_block * sb, int * flags, char * data)
 	unsigned long old_sb_flags;
 	int err;
 
+	sync_filesystem(sb);
 	spin_lock(&sbi->s_lock);
 
 	/* Store the old options */
@@ -1493,6 +1494,7 @@ static struct file_system_type ext2_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("ext2");
 
 static int __init init_ext2_fs(void)
 {

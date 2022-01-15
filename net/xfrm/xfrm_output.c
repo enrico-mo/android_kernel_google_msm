@@ -61,6 +61,13 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 		}
 
 		spin_lock_bh(&x->lock);
+
+		if (unlikely(x->km.state != XFRM_STATE_VALID)) {
+			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTSTATEINVALID);
+			err = -EINVAL;
+			goto error;
+		}
+
 		err = xfrm_state_check_expire(x);
 		if (err) {
 			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTSTATEEXPIRED);
@@ -151,6 +158,8 @@ static int xfrm_output_gso(struct sk_buff *skb)
 	kfree_skb(skb);
 	if (IS_ERR(segs))
 		return PTR_ERR(segs);
+	if (segs == NULL)
+		return -EINVAL;
 
 	do {
 		struct sk_buff *nskb = segs->next;

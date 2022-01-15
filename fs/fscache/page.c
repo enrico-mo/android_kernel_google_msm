@@ -676,7 +676,7 @@ static void fscache_write_op(struct fscache_operation *_op)
 		goto superseded;
 	page = results[0];
 	_debug("gang %d [%lx]", n, page->index);
-	if (page->index > op->store_limit) {
+	if (page->index >= op->store_limit) {
 		fscache_stat(&fscache_n_store_pages_over_limit);
 		goto superseded;
 	}
@@ -767,7 +767,7 @@ int __fscache_write_page(struct fscache_cookie *cookie,
 			       fscache_release_write_op);
 	op->op.flags = FSCACHE_OP_ASYNC | (1 << FSCACHE_OP_WAITING);
 
-	ret = radix_tree_preload(gfp & ~__GFP_HIGHMEM);
+	ret = radix_tree_maybe_preload(gfp & ~__GFP_HIGHMEM);
 	if (ret < 0)
 		goto nomem_free;
 

@@ -20,6 +20,7 @@
 #include <linux/signal.h>
 #include <linux/rcupdate.h>
 #include <linux/pid_namespace.h>
+#include <linux/shmem_fs.h>
 
 #include <asm/poll.h>
 #include <asm/siginfo.h>
@@ -369,9 +370,19 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_SETFL:
 		err = setfl(fd, filp, arg);
 		break;
+#if BITS_PER_LONG != 32
+	/* 32-bit arches must use fcntl64() */
+	case F_OFD_GETLK:
+#endif
 	case F_GETLK:
-		err = fcntl_getlk(filp, (struct flock __user *) arg);
+		err = fcntl_getlk(filp, cmd, (struct flock __user *) arg);
 		break;
+#if BITS_PER_LONG != 32
+	/* 32-bit arches must use fcntl64() */
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
+#endif
+		/* Fallthrough */
 	case F_SETLK:
 	case F_SETLKW:
 		err = fcntl_setlk(fd, filp, cmd, (struct flock __user *) arg);
@@ -419,6 +430,10 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_SETPIPE_SZ:
 	case F_GETPIPE_SZ:
 		err = pipe_fcntl(filp, cmd, arg);
+		break;
+	case F_ADD_SEALS:
+	case F_GET_SEALS:
+		err = shmem_fcntl(filp, cmd, arg);
 		break;
 	default:
 		break;
@@ -495,17 +510,20 @@ SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 	err = -EBADF;
 	
 	switch (cmd) {
-		case F_GETLK64:
-			err = fcntl_getlk64(filp, (struct flock64 __user *) arg);
-			break;
-		case F_SETLK64:
-		case F_SETLKW64:
-			err = fcntl_setlk64(fd, filp, cmd,
-					(struct flock64 __user *) arg);
-			break;
-		default:
-			err = do_fcntl(fd, cmd, arg, filp);
-			break;
+	case F_GETLK64:
+	case F_OFD_GETLK:
+		err = fcntl_getlk64(filp, cmd, (struct flock64 __user *) arg);
+		break;
+	case F_SETLK64:
+	case F_SETLKW64:
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
+		err = fcntl_setlk64(fd, filp, cmd,
+				(struct flock64 __user *) arg);
+		break;
+	default:
+		err = do_fcntl(fd, cmd, arg, filp);
+		break;
 	}
 	fput(filp);
 out:
@@ -835,14 +853,14 @@ static int __init fcntl_init(void)
 	 * Exceptions: O_NONBLOCK is a two bit define on parisc; O_NDELAY
 	 * is defined as O_NONBLOCK on some platforms and not on others.
 	 */
-	BUILD_BUG_ON(19 - 1 /* for O_RDONLY being 0 */ != HWEIGHT32(
+	BUILD_BUG_ON(20 - 1 /* for O_RDONLY being 0 */ != HWEIGHT32(
 		O_RDONLY	| O_WRONLY	| O_RDWR	|
 		O_CREAT		| O_EXCL	| O_NOCTTY	|
 		O_TRUNC		| O_APPEND	| /* O_NONBLOCK	| */
 		__O_SYNC	| O_DSYNC	| FASYNC	|
 		O_DIRECT	| O_LARGEFILE	| O_DIRECTORY	|
 		O_NOFOLLOW	| O_NOATIME	| O_CLOEXEC	|
-		__FMODE_EXEC	| O_PATH
+		__FMODE_EXEC	| O_PATH	| __O_TMPFILE
 		));
 
 	fasync_cache = kmem_cache_create("fasync_cache",

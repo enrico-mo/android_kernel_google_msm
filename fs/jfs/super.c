@@ -368,6 +368,7 @@ static int jfs_remount(struct super_block *sb, int *flags, char *data)
 	int flag = JFS_SBI(sb)->flag;
 	int ret;
 
+	sync_filesystem(sb);
 	if (!parse_options(data, sb, &newLVSize, &flag)) {
 		return -EINVAL;
 	}
@@ -779,6 +780,7 @@ static struct file_system_type jfs_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("jfs");
 
 static void init_once(void *foo)
 {

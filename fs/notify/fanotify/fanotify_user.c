@@ -22,6 +22,19 @@
 #define FANOTIFY_DEFAULT_MAX_MARKS	8192
 #define FANOTIFY_DEFAULT_MAX_LISTENERS	128
 
+/*
+ * All flags that may be specified in parameter event_f_flags of fanotify_init.
+ *
+ * Internal and external open flags are stored together in field f_flags of
+ * struct file. Only external open flags shall be allowed in event_f_flags.
+ * Internal flags like FMODE_NONOTIFY, FMODE_EXEC, FMODE_NOCMTIME shall be
+ * excluded.
+ */
+#define	FANOTIFY_INIT_ALL_EVENT_F_BITS				( \
+		O_ACCMODE	| O_APPEND	| O_NONBLOCK	| \
+		__O_SYNC	| O_DSYNC	| O_CLOEXEC     | \
+		O_LARGEFILE	| O_NOATIME	)
+
 extern const struct fsnotify_ops fanotify_fsnotify_ops;
 
 static struct kmem_cache *fanotify_mark_cache __read_mostly;
@@ -67,7 +80,7 @@ static int create_fd(struct fsnotify_group *group, struct fsnotify_event *event)
 
 	pr_debug("%s: group=%p event=%p\n", __func__, group, event);
 
-	client_fd = get_unused_fd();
+	client_fd = get_unused_fd_flags(group->fanotify_data.f_flags);
 	if (client_fd < 0)
 		return client_fd;
 
@@ -120,6 +133,7 @@ static int fill_event_metadata(struct fsnotify_group *group,
 	metadata->event_len = FAN_EVENT_METADATA_LEN;
 	metadata->metadata_len = FAN_EVENT_METADATA_LEN;
 	metadata->vers = FANOTIFY_METADATA_VERSION;
+	metadata->reserved = 0;
 	metadata->mask = event->mask & FAN_ALL_OUTGOING_EVENTS;
 	metadata->pid = pid_vnr(event->tgid);
 	if (unlikely(event->mask & FAN_Q_OVERFLOW))
@@ -506,7 +520,7 @@ static int fanotify_find_path(int dfd, const char __user *filename,
 	}
 
 	/* you can only watch an inode if you have read permissions on it */
-	ret = inode_permission(path->dentry->d_inode, MAY_READ);
+	ret = inode_permission2(path->mnt, path->dentry->d_inode, MAY_READ);
 	if (ret)
 		path_put(path);
 out:
@@ -690,6 +704,18 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	if (flags & ~FAN_ALL_INIT_FLAGS)
 		return -EINVAL;
+
+	if (event_f_flags & ~FANOTIFY_INIT_ALL_EVENT_F_BITS)
+		return -EINVAL;
+
+	switch (event_f_flags & O_ACCMODE) {
+	case O_RDONLY:
+	case O_RDWR:
+	case O_WRONLY:
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	user = get_current_user();
 	if (atomic_read(&user->fanotify_listeners) > FANOTIFY_DEFAULT_MAX_LISTENERS) {

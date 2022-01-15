@@ -704,7 +704,6 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 		seq_puts(seq, ",noextent_cache");
 	if (test_opt(sbi, DATA_FLUSH))
 		seq_puts(seq, ",data_flush");
-	seq_printf(seq, ",active_logs=%u", sbi->active_logs);
 
 	return 0;
 }
@@ -1645,6 +1644,7 @@ static struct file_system_type f2fs_fs_type = {
 	.kill_sb	= kill_f2fs_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("f2fs");
 
 static int __init init_inodecache(void)
 {

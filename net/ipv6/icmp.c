@@ -518,7 +518,7 @@ void icmpv6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info)
 			      np->tclass, NULL, &fl6, (struct rt6_info*)dst,
 			      MSG_DONTWAIT, np->dontfrag);
 	if (err) {
-		ICMP6_INC_STATS_BH(net, idev, ICMP6_MIB_OUTERRORS);
+		ICMP6_INC_STATS(net, idev, ICMP6_MIB_OUTERRORS);
 		ip6_flush_pending_frames(sk);
 	} else {
 		err = icmpv6_push_pending_frames(sk, &fl6, &tmp_hdr,
@@ -667,7 +667,6 @@ static int icmpv6_rcv(struct sk_buff *skb)
 	struct net_device *dev = skb->dev;
 	struct inet6_dev *idev = __in6_dev_get(dev);
 	const struct in6_addr *saddr, *daddr;
-	const struct ipv6hdr *orig_hdr;
 	struct icmp6hdr *hdr;
 	u8 type;
 
@@ -679,7 +678,7 @@ static int icmpv6_rcv(struct sk_buff *skb)
 				 XFRM_STATE_ICMP))
 			goto drop_no_count;
 
-		if (!pskb_may_pull(skb, sizeof(*hdr) + sizeof(*orig_hdr)))
+		if (!pskb_may_pull(skb, sizeof(*hdr) + sizeof(struct ipv6hdr)))
 			goto drop_no_count;
 
 		nh = skb_network_offset(skb);
@@ -741,9 +740,6 @@ static int icmpv6_rcv(struct sk_buff *skb)
 		if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
 			goto discard_it;
 		hdr = icmp6_hdr(skb);
-		orig_hdr = (struct ipv6hdr *) (hdr + 1);
-		rt6_pmtu_discovery(&orig_hdr->daddr, &orig_hdr->saddr, dev,
-				   ntohl(hdr->icmp6_mtu));
 
 		/*
 		 *	Drop through to notify
@@ -938,6 +934,14 @@ static const struct icmp6_err {
 		.err	= ECONNREFUSED,
 		.fatal	= 1,
 	},
+	{	/* POLICY_FAIL */
+		.err	= EACCES,
+		.fatal	= 1,
+	},
+	{	/* REJECT_ROUTE	*/
+		.err	= EACCES,
+		.fatal	= 1,
+	},
 };
 
 int icmpv6_err_convert(u8 type, u8 code, int *err)
@@ -949,7 +953,7 @@ int icmpv6_err_convert(u8 type, u8 code, int *err)
 	switch (type) {
 	case ICMPV6_DEST_UNREACH:
 		fatal = 1;
-		if (code <= ICMPV6_PORT_UNREACH) {
+		if (code < ARRAY_SIZE(tab_unreach)) {
 			*err  = tab_unreach[code].err;
 			fatal = tab_unreach[code].fatal;
 		}

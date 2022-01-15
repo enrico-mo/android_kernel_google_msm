@@ -208,6 +208,7 @@ static int parse_options(struct super_block *sb, char *options)
 
 static int adfs_remount(struct super_block *sb, int *flags, char *data)
 {
+	sync_filesystem(sb);
 	*flags |= MS_NODIRATIME;
 	return parse_options(sb, data);
 }
@@ -515,6 +516,7 @@ static struct file_system_type adfs_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("adfs");
 
 static int __init init_adfs_fs(void)
 {

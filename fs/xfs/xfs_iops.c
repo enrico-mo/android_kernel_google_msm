@@ -182,7 +182,7 @@ xfs_vn_create(
 	struct inode	*dir,
 	struct dentry	*dentry,
 	umode_t		mode,
-	struct nameidata *nd)
+	bool		flags)
 {
 	return xfs_vn_mknod(dir, dentry, mode, 0);
 }
@@ -200,7 +200,7 @@ STATIC struct dentry *
 xfs_vn_lookup(
 	struct inode	*dir,
 	struct dentry	*dentry,
-	struct nameidata *nd)
+	unsigned int flags)
 {
 	struct xfs_inode *cip;
 	struct xfs_name	name;
@@ -225,7 +225,7 @@ STATIC struct dentry *
 xfs_vn_ci_lookup(
 	struct inode	*dir,
 	struct dentry	*dentry,
-	struct nameidata *nd)
+	unsigned int flags)
 {
 	struct xfs_inode *ip;
 	struct xfs_name	xname;
@@ -457,6 +457,28 @@ xfs_vn_getattr(
 	return 0;
 }
 
+static void
+xfs_setattr_mode(
+	struct xfs_trans	*tp,
+	struct xfs_inode	*ip,
+	struct iattr		*iattr)
+{
+	struct inode	*inode = VFS_I(ip);
+	umode_t		mode = iattr->ia_mode;
+
+	ASSERT(tp);
+	ASSERT(xfs_isilocked(ip, XFS_ILOCK_EXCL));
+
+	if (!in_group_p(inode->i_gid) && !capable(CAP_FSETID))
+		mode &= ~S_ISGID;
+
+	ip->i_d.di_mode &= S_IFMT;
+	ip->i_d.di_mode |= mode & ~S_IFMT;
+
+	inode->i_mode &= S_IFMT;
+	inode->i_mode |= mode & ~S_IFMT;
+}
+
 int
 xfs_setattr_nonsize(
 	struct xfs_inode	*ip,
@@ -608,18 +630,8 @@ xfs_setattr_nonsize(
 	/*
 	 * Change file access modes.
 	 */
-	if (mask & ATTR_MODE) {
-		umode_t mode = iattr->ia_mode;
-
-		if (!in_group_p(inode->i_gid) && !capable(CAP_FSETID))
-			mode &= ~S_ISGID;
-
-		ip->i_d.di_mode &= S_IFMT;
-		ip->i_d.di_mode |= mode & ~S_IFMT;
-
-		inode->i_mode &= S_IFMT;
-		inode->i_mode |= mode & ~S_IFMT;
-	}
+	if (mask & ATTR_MODE)
+		xfs_setattr_mode(tp, ip, iattr);
 
 	/*
 	 * Change file access or modified times.
@@ -716,9 +728,8 @@ xfs_setattr_size(
 		return XFS_ERROR(error);
 
 	ASSERT(S_ISREG(ip->i_d.di_mode));
-	ASSERT((mask & (ATTR_MODE|ATTR_UID|ATTR_GID|ATTR_ATIME|ATTR_ATIME_SET|
-			ATTR_MTIME_SET|ATTR_KILL_SUID|ATTR_KILL_SGID|
-			ATTR_KILL_PRIV|ATTR_TIMES_SET)) == 0);
+	ASSERT((mask & (ATTR_UID|ATTR_GID|ATTR_ATIME|ATTR_ATIME_SET|
+			ATTR_MTIME_SET|ATTR_KILL_PRIV|ATTR_TIMES_SET)) == 0);
 
 	lock_flags = XFS_ILOCK_EXCL;
 	if (!(flags & XFS_ATTR_NOLOCK))
@@ -860,6 +871,12 @@ xfs_setattr_size(
 		 */
 		xfs_iflags_set(ip, XFS_ITRUNCATED);
 	}
+
+	/*
+	 * Change file access modes.
+	 */
+	if (mask & ATTR_MODE)
+		xfs_setattr_mode(tp, ip, iattr);
 
 	if (mask & ATTR_CTIME) {
 		inode->i_ctime = iattr->ia_ctime;

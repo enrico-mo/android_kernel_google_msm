@@ -388,7 +388,6 @@ static const struct bin_table bin_net_ipv4_table[] = {
 	{ CTL_INT,	NET_TCP_MODERATE_RCVBUF,		"tcp_moderate_rcvbuf" },
 	{ CTL_INT,	NET_TCP_TSO_WIN_DIVISOR,		"tcp_tso_win_divisor" },
 	{ CTL_STR,	NET_TCP_CONG_CONTROL,			"tcp_congestion_control" },
-	{ CTL_INT,	NET_TCP_ABC,				"tcp_abc" },
 	{ CTL_INT,	NET_TCP_MTU_PROBING,			"tcp_mtu_probing" },
 	{ CTL_INT,	NET_TCP_BASE_MSS,			"tcp_base_mss" },
 	{ CTL_INT,	NET_IPV4_TCP_WORKAROUND_SIGNED_WINDOWS,	"tcp_workaround_signed_windows" },
@@ -1195,9 +1194,10 @@ static ssize_t bin_dn_node_address(struct file *file,
 
 		/* Convert the decnet address to binary */
 		result = -EIO;
-		nodep = strchr(buf, '.') + 1;
+		nodep = strchr(buf, '.');
 		if (!nodep)
 			goto out;
+		++nodep;
 
 		area = simple_strtoul(buf, NULL, 10);
 		node = simple_strtoul(nodep, NULL, 10);

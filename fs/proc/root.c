@@ -91,6 +91,8 @@ static int proc_parse_options(char *options, struct pid_namespace *pid)
 int proc_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct pid_namespace *pid = sb->s_fs_info;
+
+	sync_filesystem(sb);
 	return !proc_parse_options(data, pid);
 }
 
@@ -200,13 +202,12 @@ static int proc_root_getattr(struct vfsmount *mnt, struct dentry *dentry, struct
 	return 0;
 }
 
-static struct dentry *proc_root_lookup(struct inode * dir, struct dentry * dentry, struct nameidata *nd)
+static struct dentry *proc_root_lookup(struct inode * dir, struct dentry * dentry, unsigned int flags)
 {
-	if (!proc_lookup(dir, dentry, nd)) {
+	if (!proc_lookup(dir, dentry, flags))
 		return NULL;
-	}
 	
-	return proc_pid_lookup(dir, dentry, nd);
+	return proc_pid_lookup(dir, dentry, flags);
 }
 
 static int proc_root_readdir(struct file * filp,

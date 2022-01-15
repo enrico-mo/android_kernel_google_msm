@@ -146,10 +146,7 @@ static struct dentry *ufs_fh_to_parent(struct super_block *sb, struct fid *fid,
 
 static struct dentry *ufs_get_parent(struct dentry *child)
 {
-	struct qstr dot_dot = {
-		.name	= "..",
-		.len	= 2,
-	};
+	struct qstr dot_dot = QSTR_INIT("..", 2);
 	ino_t ino;
 
 	ino = ufs_inode_by_name(child->d_inode, &dot_dot);
@@ -1264,6 +1261,7 @@ static int ufs_remount (struct super_block *sb, int *mount_flags, char *data)
 	unsigned new_mount_opt, ufstype;
 	unsigned flags;
 
+	sync_filesystem(sb);
 	lock_ufs(sb);
 	lock_super(sb);
 	uspi = UFS_SB(sb)->s_uspi;
@@ -1481,6 +1479,7 @@ static struct file_system_type ufs_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("ufs");
 
 static int __init init_ufs_fs(void)
 {

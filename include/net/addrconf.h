@@ -77,10 +77,13 @@ extern struct inet6_ifaddr      *ipv6_get_ifaddr(struct net *net,
 						 int strict);
 
 extern int			ipv6_dev_get_saddr(struct net *net,
-					       struct net_device *dev,
+					       const struct net_device *dev,
 					       const struct in6_addr *daddr,
 					       unsigned int srcprefs,
 					       struct in6_addr *saddr);
+extern int			__ipv6_get_lladdr(struct inet6_dev *idev,
+						  struct in6_addr *addr,
+						  unsigned char banned_flags);
 extern int			ipv6_get_lladdr(struct net_device *dev,
 						struct in6_addr *addr,
 						unsigned char banned_flags);

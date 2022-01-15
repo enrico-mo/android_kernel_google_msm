@@ -444,6 +444,8 @@ static int ntfs_remount(struct super_block *sb, int *flags, char *opt)
 
 	ntfs_debug("Entering with remount options string: %s", opt);
 
+	sync_filesystem(sb);
+
 #ifndef NTFS_RW
 	/* For read-only compiled driver, enforce read-only flag. */
 	*flags |= MS_RDONLY;
@@ -3071,6 +3073,7 @@ static struct file_system_type ntfs_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("ntfs");
 
 /* Stable names for the slab caches. */
 static const char ntfs_index_ctx_cache_name[] = "ntfs_index_ctx_cache";

@@ -134,6 +134,9 @@ static int inet6_create(struct net *net, struct socket *sock, int protocol,
 	    !inet_ehash_secret)
 		build_ehash_secret();
 
+	if (protocol < 0 || protocol >= IPPROTO_MAX)
+		return -EINVAL;
+
 	/* Look for the requested type/protocol pair. */
 lookup_protocol:
 	err = -ESOCKTNOSUPPORT;
@@ -708,7 +711,6 @@ int inet6_sk_rebuild_header(struct sock *sk)
 		fl6.flowi6_mark = sk->sk_mark;
 		fl6.fl6_dport = inet->inet_dport;
 		fl6.fl6_sport = inet->inet_sport;
-		fl6.flowi6_uid = sock_i_uid(sk);
 		security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
 
 		rcu_read_lock();
@@ -1016,6 +1018,8 @@ static void ipv6_packet_cleanup(void)
 
 static int __net_init ipv6_init_mibs(struct net *net)
 {
+	int i;
+
 	if (snmp_mib_init((void __percpu **)net->mib.udp_stats_in6,
 			  sizeof(struct udp_mib),
 			  __alignof__(struct udp_mib)) < 0)
@@ -1028,6 +1032,18 @@ static int __net_init ipv6_init_mibs(struct net *net)
 			  sizeof(struct ipstats_mib),
 			  __alignof__(struct ipstats_mib)) < 0)
 		goto err_ip_mib;
+
+	for_each_possible_cpu(i) {
+		struct ipstats_mib *af_inet6_stats;
+		af_inet6_stats = per_cpu_ptr(net->mib.ipv6_statistics[0], i);
+		u64_stats_init(&af_inet6_stats->syncp);
+#if SNMP_ARRAY_SZ == 2
+		af_inet6_stats = per_cpu_ptr(net->mib.ipv6_statistics[1], i);
+		u64_stats_init(&af_inet6_stats->syncp);
+#endif
+	}
+
+
 	if (snmp_mib_init((void __percpu **)net->mib.icmpv6_statistics,
 			  sizeof(struct icmpv6_mib),
 			  __alignof__(struct icmpv6_mib)) < 0)
@@ -1207,6 +1223,9 @@ static int __init inet6_init(void)
 	err = ip6_route_init();
 	if (err)
 		goto ip6_route_fail;
+	err = ndisc_late_init();
+	if (err)
+		goto ndisc_late_fail;
 	err = ip6_flowlabel_init();
 	if (err)
 		goto ip6_flowlabel_fail;
@@ -1273,6 +1292,8 @@ ipv6_exthdrs_fail:
 addrconf_fail:
 	ip6_flowlabel_cleanup();
 ip6_flowlabel_fail:
+	ndisc_late_cleanup();
+ndisc_late_fail:
 	ip6_route_cleanup();
 ip6_route_fail:
 #ifdef CONFIG_PROC_FS
@@ -1342,6 +1363,7 @@ static void __exit inet6_exit(void)
 	ipv6_exthdrs_exit();
 	addrconf_cleanup();
 	ip6_flowlabel_cleanup();
+	ndisc_late_cleanup();
 	ip6_route_cleanup();
 #ifdef CONFIG_PROC_FS
 

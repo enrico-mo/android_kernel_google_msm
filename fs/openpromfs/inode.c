@@ -170,13 +170,13 @@ static const struct file_operations openprom_operations = {
 	.llseek		= generic_file_llseek,
 };
 
-static struct dentry *openpromfs_lookup(struct inode *, struct dentry *, struct nameidata *);
+static struct dentry *openpromfs_lookup(struct inode *, struct dentry *, unsigned int);
 
 static const struct inode_operations openprom_inode_operations = {
 	.lookup		= openpromfs_lookup,
 };
 
-static struct dentry *openpromfs_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *nd)
+static struct dentry *openpromfs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 {
 	struct op_inode_info *ent_oi, *oi = OP_I(dir);
 	struct device_node *dp, *child;
@@ -375,6 +375,7 @@ static struct inode *openprom_iget(struct super_block *sb, ino_t ino)
 
 static int openprom_remount(struct super_block *sb, int *flags, char *data)
 {
+	sync_filesystem(sb);
 	*flags |= MS_NOATIME;
 	return 0;
 }
@@ -432,6 +433,7 @@ static struct file_system_type openprom_fs_type = {
 	.mount		= openprom_mount,
 	.kill_sb	= kill_anon_super,
 };
+MODULE_ALIAS_FS("openpromfs");
 
 static void op_inode_init_once(void *data)
 {

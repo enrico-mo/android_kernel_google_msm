@@ -94,6 +94,7 @@ static void destroy_inodecache(void)
 
 static int ncp_remount(struct super_block *sb, int *flags, char* data)
 {
+	sync_filesystem(sb);
 	*flags |= MS_NODIRATIME;
 	return 0;
 }
@@ -1037,6 +1038,7 @@ static struct file_system_type ncp_fs_type = {
 	.kill_sb	= kill_anon_super,
 	.fs_flags	= FS_BINARY_MOUNTDATA,
 };
+MODULE_ALIAS_FS("ncpfs");
 
 static int __init init_ncp_fs(void)
 {

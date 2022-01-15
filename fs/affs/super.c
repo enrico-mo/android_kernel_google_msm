@@ -520,6 +520,7 @@ affs_remount(struct super_block *sb, int *flags, char *data)
 
 	pr_debug("AFFS: remount(flags=0x%x,opts=\"%s\")\n",*flags,data);
 
+	sync_filesystem(sb);
 	*flags |= MS_NODIRATIME;
 
 	memcpy(volume, sbi->s_volume, 32);
@@ -593,6 +594,7 @@ static struct file_system_type affs_fs_type = {
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
+MODULE_ALIAS_FS("affs");
 
 static int __init init_affs_fs(void)
 {

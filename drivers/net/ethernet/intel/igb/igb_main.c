@@ -728,6 +728,8 @@ static int igb_alloc_queues(struct igb_adapter *adapter)
 		/* For 82575, context index must be unique per ring. */
 		if (adapter->hw.mac.type == e1000_82575)
 			set_bit(IGB_RING_FLAG_TX_CTX_IDX, &ring->flags);
+		u64_stats_init(&ring->tx_syncp);
+		u64_stats_init(&ring->tx_syncp2);
 		adapter->tx_ring[i] = ring;
 	}
 	/* Restore the adapter's original node */
@@ -759,6 +761,7 @@ static int igb_alloc_queues(struct igb_adapter *adapter)
 		if (adapter->hw.mac.type == e1000_i350)
 			set_bit(IGB_RING_FLAG_RX_LB_VLAN_BSWAP, &ring->flags);
 
+		u64_stats_init(&ring->rx_syncp);
 		adapter->rx_ring[i] = ring;
 	}
 	/* Restore the adapter's original node */
@@ -951,16 +954,17 @@ static int igb_request_msix(struct igb_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	struct e1000_hw *hw = &adapter->hw;
-	int i, err = 0, vector = 0;
+	int i, err = 0, vector = 0, free_vector = 0;
 
 	err = request_irq(adapter->msix_entries[vector].vector,
 	                  igb_msix_other, 0, netdev->name, adapter);
 	if (err)
-		goto out;
-	vector++;
+		goto err_out;
 
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct igb_q_vector *q_vector = adapter->q_vector[i];
+
+		vector++;
 
 		q_vector->itr_register = hw->hw_addr + E1000_EITR(vector);
 
@@ -980,13 +984,22 @@ static int igb_request_msix(struct igb_adapter *adapter)
 		                  igb_msix_ring, 0, q_vector->name,
 		                  q_vector);
 		if (err)
-			goto out;
-		vector++;
+			goto err_free;
 	}
 
 	igb_configure_msix(adapter);
 	return 0;
-out:
+
+err_free:
+	/* free already assigned IRQs */
+	free_irq(adapter->msix_entries[free_vector++].vector, adapter);
+
+	vector--;
+	for (i = 0; i < vector; i++) {
+		free_irq(adapter->msix_entries[free_vector++].vector,
+			 adapter->q_vector[i]);
+	}
+err_out:
 	return err;
 }
 
@@ -4639,17 +4652,19 @@ void igb_update_stats(struct igb_adapter *adapter,
 	bytes = 0;
 	packets = 0;
 	for (i = 0; i < adapter->num_rx_queues; i++) {
-		u32 rqdpc_tmp = rd32(E1000_RQDPC(i)) & 0x0FFF;
+		u32 rqdpc = rd32(E1000_RQDPC(i));
 		struct igb_ring *ring = adapter->rx_ring[i];
 
-		ring->rx_stats.drops += rqdpc_tmp;
-		net_stats->rx_fifo_errors += rqdpc_tmp;
+		if (rqdpc) {
+			ring->rx_stats.drops += rqdpc;
+			net_stats->rx_fifo_errors += rqdpc;
+		}
 
 		do {
-			start = u64_stats_fetch_begin_bh(&ring->rx_syncp);
+			start = u64_stats_fetch_begin_irq(&ring->rx_syncp);
 			_bytes = ring->rx_stats.bytes;
 			_packets = ring->rx_stats.packets;
-		} while (u64_stats_fetch_retry_bh(&ring->rx_syncp, start));
+		} while (u64_stats_fetch_retry_irq(&ring->rx_syncp, start));
 		bytes += _bytes;
 		packets += _packets;
 	}
@@ -4662,10 +4677,10 @@ void igb_update_stats(struct igb_adapter *adapter,
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct igb_ring *ring = adapter->tx_ring[i];
 		do {
-			start = u64_stats_fetch_begin_bh(&ring->tx_syncp);
+			start = u64_stats_fetch_begin_irq(&ring->tx_syncp);
 			_bytes = ring->tx_stats.bytes;
 			_packets = ring->tx_stats.packets;
-		} while (u64_stats_fetch_retry_bh(&ring->tx_syncp, start));
+		} while (u64_stats_fetch_retry_irq(&ring->tx_syncp, start));
 		bytes += _bytes;
 		packets += _packets;
 	}

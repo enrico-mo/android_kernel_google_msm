@@ -445,10 +445,10 @@ static struct rtnl_link_stats64 *be_get_stats64(struct net_device *netdev,
 	for_all_rx_queues(adapter, rxo, i) {
 		const struct be_rx_stats *rx_stats = rx_stats(rxo);
 		do {
-			start = u64_stats_fetch_begin_bh(&rx_stats->sync);
+			start = u64_stats_fetch_begin_irq(&rx_stats->sync);
 			pkts = rx_stats(rxo)->rx_pkts;
 			bytes = rx_stats(rxo)->rx_bytes;
-		} while (u64_stats_fetch_retry_bh(&rx_stats->sync, start));
+		} while (u64_stats_fetch_retry_irq(&rx_stats->sync, start));
 		stats->rx_packets += pkts;
 		stats->rx_bytes += bytes;
 		stats->multicast += rx_stats(rxo)->rx_mcast_pkts;
@@ -459,10 +459,10 @@ static struct rtnl_link_stats64 *be_get_stats64(struct net_device *netdev,
 	for_all_tx_queues(adapter, txo, i) {
 		const struct be_tx_stats *tx_stats = tx_stats(txo);
 		do {
-			start = u64_stats_fetch_begin_bh(&tx_stats->sync);
+			start = u64_stats_fetch_begin_irq(&tx_stats->sync);
 			pkts = tx_stats(txo)->tx_pkts;
 			bytes = tx_stats(txo)->tx_bytes;
-		} while (u64_stats_fetch_retry_bh(&tx_stats->sync, start));
+		} while (u64_stats_fetch_retry_irq(&tx_stats->sync, start));
 		stats->tx_packets += pkts;
 		stats->tx_bytes += bytes;
 	}
@@ -569,6 +569,11 @@ static inline u16 be_get_tx_vlan_tag(struct be_adapter *adapter,
 				adapter->recommended_prio;
 
 	return vlan_tag;
+}
+
+static int be_vlan_tag_chk(struct be_adapter *adapter, struct sk_buff *skb)
+{
+	return vlan_tx_tag_present(skb) || adapter->pvid;
 }
 
 static void wrb_fill_hdr(struct be_adapter *adapter, struct be_eth_hdr_wrb *hdr,
@@ -698,39 +703,64 @@ dma_err:
 	return 0;
 }
 
+static struct sk_buff *be_insert_vlan_in_pkt(struct be_adapter *adapter,
+					     struct sk_buff *skb)
+{
+	u16 vlan_tag = 0;
+
+	skb = skb_share_check(skb, GFP_ATOMIC);
+	if (unlikely(!skb))
+		return skb;
+
+	if (vlan_tx_tag_present(skb)) {
+		vlan_tag = be_get_tx_vlan_tag(adapter, skb);
+		__vlan_put_tag(skb, vlan_tag);
+		skb->vlan_tci = 0;
+	}
+
+	return skb;
+}
+
 static netdev_tx_t be_xmit(struct sk_buff *skb,
 			struct net_device *netdev)
 {
 	struct be_adapter *adapter = netdev_priv(netdev);
 	struct be_tx_obj *txo = &adapter->tx_obj[skb_get_queue_mapping(skb)];
 	struct be_queue_info *txq = &txo->q;
+	struct iphdr *ip = NULL;
 	u32 wrb_cnt = 0, copied = 0;
-	u32 start = txq->head;
+	u32 start = txq->head, eth_hdr_len;
 	bool dummy_wrb, stopped = false;
 
-	/* For vlan tagged pkts, BE
-	 * 1) calculates checksum even when CSO is not requested
-	 * 2) calculates checksum wrongly for padded pkt less than
-	 * 60 bytes long.
-	 * As a workaround disable TX vlan offloading in such cases.
+	eth_hdr_len = ntohs(skb->protocol) == ETH_P_8021Q ?
+		VLAN_ETH_HLEN : ETH_HLEN;
+
+	/* HW has a bug which considers padding bytes as legal
+	 * and modifies the IPv4 hdr's 'tot_len' field
 	 */
-	if (unlikely(vlan_tx_tag_present(skb) &&
-		     (skb->ip_summed != CHECKSUM_PARTIAL || skb->len <= 60))) {
-		skb = skb_share_check(skb, GFP_ATOMIC);
+	if (skb->len <= 60 && be_vlan_tag_chk(adapter, skb) &&
+			is_ipv4_pkt(skb)) {
+		ip = (struct iphdr *)ip_hdr(skb);
+		pskb_trim(skb, eth_hdr_len + ntohs(ip->tot_len));
+	}
+
+	/* HW has a bug wherein it will calculate CSUM for VLAN
+	 * pkts even though it is disabled.
+	 * Manually insert VLAN in pkt.
+	 */
+	if (skb->ip_summed != CHECKSUM_PARTIAL &&
+			be_vlan_tag_chk(adapter, skb)) {
+		skb = be_insert_vlan_in_pkt(adapter, skb);
 		if (unlikely(!skb))
 			goto tx_drop;
-
-		skb = __vlan_put_tag(skb, be_get_tx_vlan_tag(adapter, skb));
-		if (unlikely(!skb))
-			goto tx_drop;
-
-		skb->vlan_tci = 0;
 	}
 
 	wrb_cnt = wrb_cnt_for_skb(adapter, skb, &dummy_wrb);
 
 	copied = make_tx_wrbs(adapter, txq, skb, wrb_cnt, dummy_wrb);
 	if (copied) {
+		int gso_segs = skb_shinfo(skb)->gso_segs;
+
 		/* record the sent skb in the sent_skb table */
 		BUG_ON(txo->sent_skb_list[start]);
 		txo->sent_skb_list[start] = skb;
@@ -748,8 +778,7 @@ static netdev_tx_t be_xmit(struct sk_buff *skb,
 
 		be_txq_notify(adapter, txq->id, wrb_cnt);
 
-		be_tx_stats_update(txo, wrb_cnt, copied,
-				skb_shinfo(skb)->gso_segs, stopped);
+		be_tx_stats_update(txo, wrb_cnt, copied, gso_segs, stopped);
 	} else {
 		txq->head = start;
 		dev_kfree_skb_any(skb);
@@ -1057,9 +1086,9 @@ static void be_eqd_update(struct be_adapter *adapter, struct be_eq_obj *eqo)
 		return;
 
 	do {
-		start = u64_stats_fetch_begin_bh(&stats->sync);
+		start = u64_stats_fetch_begin_irq(&stats->sync);
 		pkts = stats->rx_pkts;
-	} while (u64_stats_fetch_retry_bh(&stats->sync, start));
+	} while (u64_stats_fetch_retry_irq(&stats->sync, start));
 
 	stats->rx_pps = (unsigned long)(pkts - stats->rx_pkts_prev) / (delta / HZ);
 	stats->rx_pkts_prev = pkts;
@@ -1794,6 +1823,9 @@ static int be_tx_cqs_create(struct be_adapter *adapter)
 		if (status)
 			return status;
 
+		u64_stats_init(&txo->stats.sync);
+		u64_stats_init(&txo->stats.sync_compl);
+
 		/* If num_evt_qs is less than num_tx_qs, then more than
 		 * one txq share an eq
 		 */
@@ -1859,6 +1891,7 @@ static int be_rx_cqs_create(struct be_adapter *adapter)
 		if (rc)
 			return rc;
 
+		u64_stats_init(&rxo->stats.sync);
 		eq = &adapter->eq_obj[i % adapter->num_evt_qs].q;
 		rc = be_cmd_cq_create(adapter, cq, eq, false, 3);
 		if (rc)
@@ -2382,7 +2415,7 @@ static int be_open(struct net_device *netdev)
 
 	for_all_evt_queues(adapter, eqo, i) {
 		napi_enable(&eqo->napi);
-		be_eq_notify(adapter, eqo->q.id, true, false, 0);
+		be_eq_notify(adapter, eqo->q.id, true, true, 0);
 	}
 
 	status = be_cmd_link_status_query(adapter, NULL, NULL,
